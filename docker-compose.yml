@@ -1,0 +1,111 @@
+version: "3"
+
+services:
+    discovery-server:
+        container_name: discovery-server
+        image: aks07hat/discovery-server-nagp:v2
+        ports:
+            - "8761:8761"
+        volumes:
+            - /tmp:/workspace/logs 
+    activemq:
+        image: rmohr/activemq:5.10.0
+        container_name: activemq
+        environment:
+            - "TZ=Europe/Amsterdam"
+        volumes:
+            - "./activemq/activemq.xml:/conf/activemq.xml"
+        ports:
+            - "61616:61616"
+            - "8161:8161"
+    jaeger:
+        container_name: jaeger
+        image: jaegertracing/all-in-one:1.17
+        ports:
+            - 6831:6831/udp
+            - 16686:16686
+        volumes:
+            - /tmp:/workspace/logs     
+    admin-service:
+        container_name: admin-service
+        image: aks07hat/admin-service-nagp:v9
+        ports:
+            - "8085:8085"
+        links:
+            - discovery-server:discovery-server
+            - jaeger:jaeger
+        environment:
+            - discovery_server_url=http://discovery-server:8761/eureka
+            - jaegerhost=jaeger
+            - jaegerport=6831
+        volumes:
+            - /tmp:/workspace/logs
+    service-providers:
+        container_name: service-providers
+        image: aks07hat/service-providers-nagp:v6
+        ports:
+            - "8088:8088"
+        links:
+            - discovery-server:discovery-server
+            - jaeger:jaeger
+            - activemq:activemq
+        environment:
+            - discovery_server_url=http://discovery-server:8761/eureka
+            - jaegerhost=jaeger
+            - jaegerport=6831
+            - activeMQ_url=tcp://activemq:61616
+        volumes:
+            - /tmp:/workspace/logs 
+    service-receivers:
+        container_name: service-receivers
+        image: aks07hat/service-receivers-nagp:v6
+        ports:
+            - "8081:8081"
+        links:
+            - discovery-server:discovery-server
+            - jaeger:jaeger
+            - activemq:activemq
+        environment:
+            - discovery_server_url=http://discovery-server:8761/eureka
+            - jaegerhost=jaeger
+            - jaegerport=6831
+            - activeMQ_url=tcp://activemq:61616
+        volumes:
+            - /tmp:/workspace/logs 
+    notification-service:
+        container_name: notification-service
+        image: aks07hat/notification-service-nagp:v3
+        ports:
+            - "8092:8092"
+        links:
+            - discovery-server:discovery-server
+            - jaeger:jaeger    
+            - activemq:activemq    
+        environment:
+            - discovery_server_url=http://discovery-server:8761/eureka
+            - jaegerhost=jaeger
+            - jaegerport=6831    
+            - activeMQ_url=tcp://activemq:61616
+        volumes:
+            - /tmp:/workspace/logs 
+    api-gateway-service:
+        container_name: api-gateway-service
+        image: aks07hat/api-gateway-service-nagp:v2
+        ports:
+            - "9000:9000"
+        links:
+            - discovery-server:discovery-server 
+            - service-receivers:service-receivers
+            - service-providers:service-providers
+            - admin-service:admin-service
+            - notification-service:notification-service            
+        environment:
+            - discovery_server_url=http://discovery-server:8761/eureka   
+            - serviceReceivers_url=http://service-receivers:8081
+            - serviceProviders_url=http://service-providers:8088
+            - adminService_url=http://admin-service:8085
+            - notificationService_url=http://notification-service:8092
+        volumes:
+            - /tmp:/workspace/logs                 
+                
+                
